@@ -474,8 +474,13 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
       {
          if (sscanf(argv[i + 1], "%u", &state->timeout) == 1)
          {
-            // Ensure that if previously selected CommandKeypress we don't overwrite it
-            if (state->timeout == 0 && state->frameNextMethod != FRAME_NEXT_KEYPRESS)
+            // Ensure that if previously selected CommandKeypress or similar we don't overwrite it
+            if (state->timeout == 0 &&
+                  state->frameNextMethod != FRAME_NEXT_KEYPRESS &&
+                  state->frameNextMethod != FRAME_NEXT_GPIO &&
+                  state->frameNextMethod != FRAME_NEXT_SIGNAL &&
+                  state->frameNextMethod != FRAME_NEXT_TIMELAPSE &&
+                  state->frameNextMethod != FRAME_NEXT_IMMEDIATELY )
                state->frameNextMethod = FRAME_NEXT_FOREVER;
 
             i++;
@@ -565,7 +570,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
                state->frameNextMethod = FRAME_NEXT_TIMELAPSE;
             else
                state->frameNextMethod = FRAME_NEXT_IMMEDIATELY;
-
 
             i++;
          }
