@@ -100,6 +100,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define ANNOTATE_GAIN_SETTINGS      64
 #define ANNOTATE_LENS_SETTINGS      128
 #define ANNOTATE_MOTION_SETTINGS    256
+#define ANNOTATE_FRAME_NUMBER       512
+#define ANNOTATE_BLACK_BACKGROUND   1024
 
 
 // There isn't actually a MMAL structure for the following, so make one
@@ -150,7 +152,7 @@ typedef struct
    MMAL_PARAMETER_DRC_STRENGTH_T drc_level;  // Strength of Dynamic Range compression to apply
    MMAL_BOOL_T stats_pass;    /// Stills capture statistics pass on/off
    int enable_annotate;       /// Flag to enable the annotate, 0 = disabled, otherwise a bitmask of what needs to be displayed
-   char annotate_string[MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN]; /// String to use for annotate - overrides certain bitmask settings
+   char annotate_string[MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V2]; /// String to use for annotate - overrides certain bitmask settings
 
 } RASPICAM_CAMERA_PARAMETERS;
 

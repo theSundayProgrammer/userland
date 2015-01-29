@@ -659,7 +659,7 @@ int raspicamcontrol_parse_cmdline(RASPICAM_CAMERA_PARAMETERS *params, const char
       else
       {
          params->enable_annotate = ANNOTATE_USER_TEXT;
-         strncpy(params->annotate_string, arg2, MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN);
+         strncpy(params->annotate_string, arg2, MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V2);
       }
       used=2;
       break;
@@ -1306,33 +1306,33 @@ int raspicamcontrol_set_stats_pass(MMAL_COMPONENT_T *camera, int stats_pass)
  */
 int raspicamcontrol_set_annotate(MMAL_COMPONENT_T *camera, const int settings, const char *string)
 {
-   MMAL_PARAMETER_CAMERA_ANNOTATE_T annotate =
-      {{MMAL_PARAMETER_ANNOTATE, sizeof(MMAL_PARAMETER_CAMERA_ANNOTATE_T)}};
+   MMAL_PARAMETER_CAMERA_ANNOTATE_V2_T annotate =
+      {{MMAL_PARAMETER_ANNOTATE, sizeof(MMAL_PARAMETER_CAMERA_ANNOTATE_V2_T)}};
 
    if (settings)
    {
       time_t t = time(NULL);
       struct tm tm = *localtime(&t);
-      char tmp[32];
+      char tmp[MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V2];
 
       annotate.enable = 1;
 
       if (settings & (ANNOTATE_APP_TEXT | ANNOTATE_USER_TEXT))
       {
-         strncpy(annotate.text, string, MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN);
-         annotate.text[MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN-1] = 0;
+         strncpy(annotate.text, string, MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V2);
+         annotate.text[MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V2-1] = 0;
       }
 
       if (settings & ANNOTATE_TIME_TEXT)
       {
          strftime(tmp, 32, "%X ", &tm );
-         strncat(annotate.text, tmp, MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN);
+         strncat(annotate.text, tmp, MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V2);
       }
 
       if (settings & ANNOTATE_DATE_TEXT)
       {
          strftime(tmp, 32, "%x", &tm );
-         strncat(annotate.text, tmp, MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN - strlen(annotate.text) - 1);
+         strncat(annotate.text, tmp, MMAL_CAMERA_ANNOTATE_MAX_TEXT_LEN_V2 - strlen(annotate.text) - 1);
       }
 
       if (settings & ANNOTATE_SHUTTER_SETTINGS)
@@ -1349,6 +1349,12 @@ int raspicamcontrol_set_annotate(MMAL_COMPONENT_T *camera, const int settings, c
 
       if (settings & ANNOTATE_MOTION_SETTINGS)
          annotate.show_motion = 1;
+
+      if (settings & ANNOTATE_FRAME_NUMBER)
+         annotate.show_frame_num = 1;
+
+      if (settings & ANNOTATE_BLACK_BACKGROUND)
+         annotate.black_text_background = 1;
    }
    else
       annotate.enable = 0;
