@@ -1,10 +1,12 @@
 
-# raspistill/raspivid/raspiyuv
+# raspistill/raspivid/raspiyuv/raspividyuv
 
 SET(COMPILE_DEFINITIONS -Werror)
 
 include_directories(${PROJECT_SOURCE_DIR}/host_applications/linux/libs/bcm_host/include)
 include_directories(${PROJECT_SOURCE_DIR}/host_applications/linux/apps/raspicam/)
+
+add_subdirectory(tools)
 
 set (GL_SCENE_SOURCES
    gl_scenes/models.c
