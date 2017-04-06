@@ -135,7 +135,6 @@ typedef struct
    int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
    int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
    int frameNextMethod;                /// Which method to use to advance to next frame
-   int useGL;                          /// Render preview using OpenGL
    int glCapture;                      /// Save the GL frame-buffer instead of camera output
    int settings;                       /// Request settings from the camera
    int cameraNum;                      /// Camera number
@@ -156,7 +155,6 @@ typedef struct
 
    MMAL_POOL_T *encoder_pool; /// Pointer to the pool of buffers used by encoder output port
 
-   RASPITEX_STATE raspitex_state; /// GL renderer state and parameters
 
 } RASPISTILL_STATE;
 
@@ -351,7 +349,6 @@ static void default_status(RASPISTILL_STATE *state)
    state->timelapse = 0;
    state->fullResPreview = 0;
    state->frameNextMethod = FRAME_NEXT_SINGLE;
-   state->useGL = 0;
    state->glCapture = 0;
    state->settings = 0;
    state->cameraNum = 0;
@@ -371,7 +368,6 @@ static void default_status(RASPISTILL_STATE *state)
    raspicamcontrol_set_defaults(&state->camera_parameters);
 
    // Set initial GL preview state
-   raspitex_set_defaults(&state->raspitex_state);
 }
 
 /**
@@ -704,9 +700,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          signal(SIGUSR1, signal_handler);
          break;
 
-      case CommandGL:
-         state->useGL = 1;
-         break;
 
       case CommandGLCapture:
          state->glCapture = 1;
@@ -766,9 +759,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          if (!parms_used)
             parms_used = raspipreview_parse_cmdline(&state->preview_parameters, &argv[i][1], second_arg);
 
-         // Still unused, try GL preview options
-         if (!parms_used)
-            parms_used = raspitex_parse_cmdline(&state->raspitex_state, &argv[i][1], second_arg);
 
          // If no parms were used, this must be a bad parameters
          if (!parms_used)
@@ -781,22 +771,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
       }
    }
 
-   /* GL preview parameters use preview parameters as defaults unless overriden */
-   if (! state->raspitex_state.gl_win_defined)
-   {
-      state->raspitex_state.x       = state->preview_parameters.previewWindow.x;
-      state->raspitex_state.y       = state->preview_parameters.previewWindow.y;
-      state->raspitex_state.width   = state->preview_parameters.previewWindow.width;
-      state->raspitex_state.height  = state->preview_parameters.previewWindow.height;
-   }
-   /* Also pass the preview information through so GL renderer can determine
-    * the real resolution of the multi-media image */
-   state->raspitex_state.preview_x       = state->preview_parameters.previewWindow.x;
-   state->raspitex_state.preview_y       = state->preview_parameters.previewWindow.y;
-   state->raspitex_state.preview_width   = state->preview_parameters.previewWindow.width;
-   state->raspitex_state.preview_height  = state->preview_parameters.previewWindow.height;
-   state->raspitex_state.opacity         = state->preview_parameters.opacity;
-   state->raspitex_state.verbose         = state->verbose;
 
    if (!valid)
    {
@@ -826,9 +800,6 @@ static void display_valid_parameters(char *app_name)
 
    // Now display any help information from the camcontrol code
    raspicamcontrol_display_help();
-
-   // Now display GL preview help
-   raspitex_display_help();
 
    fprintf(stdout, "\n");
 
@@ -1168,15 +1139,6 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       goto error;
    }
 
-   if (state->useGL)
-   {
-      status = raspitex_configure_preview_port(&state->raspitex_state, preview_port);
-      if (status != MMAL_SUCCESS)
-      {
-         fprintf(stderr, "Failed to configure preview port for GL rendering");
-         goto error;
-      }
-   }
 
    state->camera_component = camera;
 
@@ -1721,12 +1683,11 @@ static int wait_for_next_frame(RASPISTILL_STATE *state, int *frame)
    return keep_running;
 }
 
-static void rename_file(RASPISTILL_STATE *state, FILE *output_file,
+static void rename_file(RASPISTILL_STATE *state, 
       const char *final_filename, const char *use_filename, int frame)
 {
    MMAL_STATUS_T status;
 
-   fclose(output_file);
    vcos_assert(use_filename != NULL && final_filename != NULL);
    if (0 != rename(use_filename, final_filename))
    {
@@ -1804,8 +1765,6 @@ int main(int argc, const char **argv)
       dump_status(&state);
    }
 
-   if (state.useGL)
-      raspitex_init(&state.raspitex_state);
 
    // OK, we have a nice set of parameters. Now set up our components
    // We have three components. Camera, Preview and encoder.
@@ -1817,7 +1776,7 @@ int main(int argc, const char **argv)
       vcos_log_error("%s: Failed to create camera component", __func__);
       exit_code = EX_SOFTWARE;
    }
-   else if ((!state.useGL) && (status = raspipreview_create(&state.preview_parameters)) != MMAL_SUCCESS)
+   else if ( (status = raspipreview_create(&state.preview_parameters)) != MMAL_SUCCESS)
    {
       vcos_log_error("%s: Failed to create preview component", __func__);
       destroy_camera_component(&state);
@@ -1843,8 +1802,6 @@ int main(int argc, const char **argv)
       encoder_input_port  = state.encoder_component->input[0];
       encoder_output_port = state.encoder_component->output[0];
 
-      if (! state.useGL)
-      {
          if (state.verbose)
             fprintf(stderr, "Connecting camera preview port to video render.\n");
 
@@ -1854,7 +1811,6 @@ int main(int argc, const char **argv)
 
          // Connect camera to preview (which might be a null_sink if no preview required)
          status = connect_ports(camera_preview_port, preview_input_port, &state.preview_connection);
-      }
 
       if (status == MMAL_SUCCESS)
       {
@@ -1880,9 +1836,6 @@ int main(int argc, const char **argv)
 
          vcos_assert(vcos_status == VCOS_SUCCESS);
 
-         /* If GL preview is requested then start the GL threads */
-         if (state.useGL && (raspitex_start(&state.raspitex_state) != 0))
-            goto error;
 
          if (status != MMAL_SUCCESS)
          {
@@ -1974,15 +1927,7 @@ int main(int argc, const char **argv)
                }
 
                // We only capture if a filename was specified and it opened
-               if (state.useGL && state.glCapture && output_file)
-               {
-                  /* Save the next GL framebuffer as the next camera still */
-                  int rc = raspitex_capture(&state.raspitex_state, output_file);
-                  if (rc != 0)
-                     vcos_log_error("Failed to capture GL preview");
-                  rename_file(&state, output_file, final_filename, use_filename, frame);
-               }
-               else if (output_file)
+               if (output_file)
                {
                   int num, q;
 
@@ -2070,7 +2015,8 @@ int main(int argc, const char **argv)
 
                   if (output_file != stdout)
                   {
-                     rename_file(&state, output_file, final_filename, use_filename, frame);
+   		fclose(output_file);
+                     rename_file(&state,  final_filename, use_filename, frame);
                   }
                   else
                   {
@@ -2108,11 +2054,6 @@ error:
       if (state.verbose)
          fprintf(stderr, "Closing down\n");
 
-      if (state.useGL)
-      {
-         raspitex_stop(&state.raspitex_state);
-         raspitex_destroy(&state.raspitex_state);
-      }
 
       // Disable all our ports that are not handled by connections
       check_disable_port(camera_video_port);
