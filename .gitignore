@@ -5,6 +5,7 @@ build/
 *.slo
 *.lo
 *.o
+*.bin
 
 # Compiled Dynamic libraries
 *.so
