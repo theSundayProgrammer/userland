@@ -73,10 +73,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/mmal_parameters_camera.h"
 
 
+extern "C" {
 #include "RaspiCamControl.h"
 #include "RaspiPreview.h"
 #include "RaspiCLI.h"
 #include "RaspiTex.h"
+}
 
 #include <semaphore.h>
 
@@ -107,7 +109,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define FRAME_NEXT_IMMEDIATELY   6
 
 
-int mmal_status_to_int(MMAL_STATUS_T status);
+extern "C" int mmal_status_to_int(MMAL_STATUS_T status);
 static void signal_handler(int signal_number);
 
 
@@ -116,8 +118,8 @@ static void signal_handler(int signal_number);
 typedef struct
 {
    int timeout;                        /// Time taken before frame is grabbed and app then shuts down. Units are milliseconds
-   int width;                          /// Requested width of image
-   int height;                         /// requested height of image
+   unsigned int width;                          /// Requested width of image
+   unsigned int height;                         /// requested height of image
    char camera_name[MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN]; // Name of the camera sensor
    int quality;                        /// JPEG quality setting (1-100)
    int wantRAW;                        /// Flag for whether the JPEG metadata also contains the RAW bayer image
@@ -167,7 +169,7 @@ typedef struct
    RASPISTILL_STATE *pstate;            /// pointer to our state in case required in callback
 } PORT_USERDATA;
 
-static void display_valid_parameters(char *app_name);
+static void display_valid_parameters(const char *app_name);
 static void store_exif_tag(RASPISTILL_STATE *state, const char *exif_tag);
 
 /// Comamnd ID's and Structure defining our command line options
@@ -234,7 +236,7 @@ static int cmdline_commands_size = sizeof(cmdline_commands) / sizeof(cmdline_com
 
 static struct
 {
-   char *format;
+   const char *format;
    MMAL_FOURCC_T encoding;
 } encoding_xref[] =
 {
@@ -249,7 +251,7 @@ static int encoding_xref_size = sizeof(encoding_xref) / sizeof(encoding_xref[0])
 
 static struct
 {
-   char *description;
+   const char *description;
    int nextFrameMethod;
 } next_frame_description[] =
 {
@@ -536,7 +538,7 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
                }
                percent++;
             }
-            state->filename = malloc(len + 10); // leave enough space for any timelapse generated changes to filename
+            state->filename = (char*)malloc(len + 10); // leave enough space for any timelapse generated changes to filename
             vcos_assert(state->filename);
             if (state->filename)
                strncpy(state->filename, argv[i + 1], len+1);
@@ -552,7 +554,7 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          int len = strlen(argv[i+1]);
          if (len)
          {
-            state->linkname = malloc(len + 10);
+            state->linkname = (char*)malloc(len + 10);
             vcos_assert(state->linkname);
             if (state->linkname)
                strncpy(state->linkname, argv[i + 1], len+1);
@@ -786,7 +788,7 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
  *
  * @param app_name String to display as the application name
  */
-static void display_valid_parameters(char *app_name)
+static void display_valid_parameters(const char *app_name)
 {
    fprintf(stdout, "Runs camera for specific time, and take JPG capture at end if requested\n\n");
    fprintf(stdout, "usage: %s [options]\n\n", app_name);
@@ -863,7 +865,7 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 
    if (pData)
    {
-      int bytes_written = buffer->length;
+      unsigned int bytes_written = buffer->length;
 
       if (buffer->length && pData->file_handle)
       {
@@ -926,10 +928,12 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    MMAL_COMPONENT_T *camera = 0;
    MMAL_ES_FORMAT_T *format;
    MMAL_PORT_T *preview_port = NULL, *video_port = NULL, *still_port = NULL;
-   MMAL_STATUS_T status;
+   int err_status=0;
 
+   MMAL_PARAMETER_INT32_T camera_num =
+      {{MMAL_PARAMETER_CAMERA_NUM, sizeof(camera_num)}, state->cameraNum};
    /* Create the component */
-   status = mmal_component_create(MMAL_COMPONENT_DEFAULT_CAMERA, &camera);
+   MMAL_STATUS_T status = mmal_component_create(MMAL_COMPONENT_DEFAULT_CAMERA, &camera);
 
    if (status != MMAL_SUCCESS)
    {
@@ -937,18 +941,17 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       goto error;
    }
 
-   status = raspicamcontrol_set_stereo_mode(camera->output[0], &state->camera_parameters.stereo_mode);
-   status += raspicamcontrol_set_stereo_mode(camera->output[1], &state->camera_parameters.stereo_mode);
-   status += raspicamcontrol_set_stereo_mode(camera->output[2], &state->camera_parameters.stereo_mode);
+   err_status = raspicamcontrol_set_stereo_mode(camera->output[0], &state->camera_parameters.stereo_mode);
+   err_status += raspicamcontrol_set_stereo_mode(camera->output[1], &state->camera_parameters.stereo_mode);
+   err_status += raspicamcontrol_set_stereo_mode(camera->output[2], &state->camera_parameters.stereo_mode);
 
-   if (status != MMAL_SUCCESS)
+   if (err_status != MMAL_SUCCESS)
    {
-      vcos_log_error("Could not set stereo mode : error %d", status);
+      status = MMAL_EAGAIN;
+      vcos_log_error("Could not set stereo mode : error %d", err_status);
       goto error;
    }
 
-   MMAL_PARAMETER_INT32_T camera_num =
-      {{MMAL_PARAMETER_CAMERA_NUM, sizeof(camera_num)}, state->cameraNum};
 
    status = mmal_port_parameter_set(camera->control, &camera_num.hdr);
 
