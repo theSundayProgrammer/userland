@@ -74,9 +74,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include "RaspiCamControl.h"
-extern "C" {
 #include "RaspiPreview.h"
-}
 
 #include "RaspiCLI.h"
 #include <semaphore.h>
