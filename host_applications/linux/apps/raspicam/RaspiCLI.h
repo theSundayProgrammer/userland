@@ -38,44 +38,9 @@ typedef struct
    int num_parameters;
 } COMMAND_LIST;
 
-/// Cross reference structure, mode string against mode id
-typedef struct 
-{
-   const char *mode;
-   MMAL_PARAM_AWBMODE_T mmal_mode;
-} AWB_REF_T;
-typedef struct 
-{
-   const char *mode;
-   MMAL_PARAM_EXPOSUREMETERINGMODE_T mmal_mode;
-} XM_REF_T;
-typedef struct 
-{
-   const char *mode;
-   MMAL_PARAMETER_DRC_STRENGTH_T mmal_mode;
-} DRC_REF_T;
-typedef struct 
-{
-   const char *mode;
-   MMAL_PARAM_IMAGEFX_T mmal_mode;
-} IMGFX_REF_T;
-typedef struct 
-{
-   const char *mode;
-   MMAL_STEREOSCOPIC_MODE_T mmal_mode;
-} STR_REF_T;
-typedef struct xref_t
-{
-   const char *mode;
-   MMAL_PARAM_EXPOSUREMODE_T mmal_mode;
-} XREF_T;
-
-
 void raspicli_display_help(const COMMAND_LIST *commands, const int num_commands);
 int raspicli_get_command_id(const COMMAND_LIST *commands, const int num_commands, const char *arg, int *num_parameters);
 
-int raspicli_map_xref(const char *str, const XREF_T *map, int num_refs);
-const char *raspicli_unmap_xref(const int en, XREF_T *map, int num_refs);
 
 
 #endif
