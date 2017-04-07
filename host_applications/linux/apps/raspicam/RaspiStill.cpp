@@ -47,7 +47,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 // We use some GNU extensions (asprintf, basename)
-#define _GNU_SOURCE
+//#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -135,7 +135,6 @@ typedef struct
    int numExifTags;                    /// Number of supplied tags
    int enableExifTags;                 /// Enable/Disable EXIF tags in output
    int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
-   int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
    int frameNextMethod;                /// Which method to use to advance to next frame
    int glCapture;                      /// Save the GL frame-buffer instead of camera output
    int settings;                       /// Request settings from the camera
@@ -186,7 +185,6 @@ static void store_exif_tag(RASPISTILL_STATE *state, const char *exif_tag);
 #define CommandEncoding     10
 #define CommandExifTag      11
 #define CommandTimelapse    12
-#define CommandFullResPreview 13
 #define CommandLink         14
 #define CommandKeypress     15
 #define CommandSignal       16
@@ -217,7 +215,6 @@ static COMMAND_LIST cmdline_commands[] =
    { CommandEncoding,"-encoding",   "e",  "Encoding to use for output file (jpg, bmp, gif, png)", 1},
    { CommandExifTag, "-exif",       "x",  "EXIF tag to apply to captures (format as 'key=value') or none", 1},
    { CommandTimelapse,"-timelapse", "tl", "Timelapse mode. Takes a picture every <t>ms. %d == frame number (Try: -o img_%04d.jpg)", 1},
-   { CommandFullResPreview,"-fullpreview","fp", "Run the preview using the still capture resolution (may reduce preview fps)", 0},
    { CommandKeypress,"-keypress",   "k",  "Wait between captures for a ENTER, X then ENTER to exit", 0},
    { CommandSignal,  "-signal",     "s",  "Wait between captures for a SIGUSR1 from another process", 0},
    { CommandGL,      "-gl",         "g",  "Draw preview to texture instead of using video render component", 0},
@@ -349,7 +346,6 @@ static void default_status(RASPISTILL_STATE *state)
    state->numExifTags = 0;
    state->enableExifTags = 1;
    state->timelapse = 0;
-   state->fullResPreview = 0;
    state->frameNextMethod = FRAME_NEXT_SINGLE;
    state->glCapture = 0;
    state->settings = 0;
@@ -403,7 +399,6 @@ static void dump_status(RASPISTILL_STATE *state)
    {
       fprintf(stderr, " no\n");
    }
-   fprintf(stderr, "Full resolution preview %s\n", state->fullResPreview ? "Yes": "No");
 
    fprintf(stderr, "Capture method : ");
    for (i=0;i<next_frame_description_size;i++)
@@ -686,10 +681,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
 
             i++;
          }
-         break;
-
-      case CommandFullResPreview:
-         state->fullResPreview = 1;
          break;
 
       case CommandKeypress: // Set keypress between capture mode
@@ -1004,6 +995,8 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    //  set up the camera configuration
    {
+      unsigned int h = state->preview_parameters.previewWindow.height;
+      unsigned int w = state->preview_parameters.previewWindow.width;
       MMAL_PARAMETER_CAMERA_CONFIG_T cam_config =
       {
          { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },
@@ -1011,19 +1004,14 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
          .max_stills_h = state->height,
          .stills_yuv422 = 0,
          .one_shot_stills = 1,
-         .max_preview_video_w = state->preview_parameters.previewWindow.width,
-         .max_preview_video_h = state->preview_parameters.previewWindow.height,
+         .max_preview_video_w = w,
+         .max_preview_video_h = h,
          .num_preview_video_frames = 3,
          .stills_capture_circular_buffer_height = 0,
          .fast_preview_resume = 0,
          .use_stc_timestamp = MMAL_PARAM_TIMESTAMP_MODE_RESET_STC
       };
 
-      if (state->fullResPreview)
-      {
-         cam_config.max_preview_video_w = state->width;
-         cam_config.max_preview_video_h = state->height;
-      }
 
       mmal_port_parameter_set(camera->control, &cam_config.hdr);
    }
@@ -1048,20 +1036,6 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
                                                      { 166, 1000 }, {999, 1000}};
         mmal_port_parameter_set(preview_port, &fps_range.hdr);
    }
-   if (state->fullResPreview)
-   {
-      // In this mode we are forcing the preview to be generated from the full capture resolution.
-      // This runs at a max of 15fps with the OV5647 sensor.
-      format->es->video.width = VCOS_ALIGN_UP(state->width, 32);
-      format->es->video.height = VCOS_ALIGN_UP(state->height, 16);
-      format->es->video.crop.x = 0;
-      format->es->video.crop.y = 0;
-      format->es->video.crop.width = state->width;
-      format->es->video.crop.height = state->height;
-      format->es->video.frame_rate.num = FULL_RES_PREVIEW_FRAME_RATE_NUM;
-      format->es->video.frame_rate.den = FULL_RES_PREVIEW_FRAME_RATE_DEN;
-   }
-   else
    {
       // Use a full FOV 4:3 mode
       format->es->video.width = VCOS_ALIGN_UP(state->preview_parameters.previewWindow.width, 32);
