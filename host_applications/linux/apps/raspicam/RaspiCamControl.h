@@ -114,8 +114,6 @@ typedef struct mmal_param_colourfx_s
 typedef struct mmal_param_thumbnail_config_s
 {
    int enable;
-   int width,height;
-   int quality;
 } MMAL_PARAM_THUMBNAIL_CONFIG_T;
 
 typedef struct param_float_rect_s

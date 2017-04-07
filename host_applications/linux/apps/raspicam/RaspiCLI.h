@@ -39,10 +39,35 @@ typedef struct
 } COMMAND_LIST;
 
 /// Cross reference structure, mode string against mode id
+typedef struct 
+{
+   const char *mode;
+   MMAL_PARAM_AWBMODE_T mmal_mode;
+} AWB_REF_T;
+typedef struct 
+{
+   const char *mode;
+   MMAL_PARAM_EXPOSUREMETERINGMODE_T mmal_mode;
+} XM_REF_T;
+typedef struct 
+{
+   const char *mode;
+   MMAL_PARAMETER_DRC_STRENGTH_T mmal_mode;
+} DRC_REF_T;
+typedef struct 
+{
+   const char *mode;
+   MMAL_PARAM_IMAGEFX_T mmal_mode;
+} IMGFX_REF_T;
+typedef struct 
+{
+   const char *mode;
+   MMAL_STEREOSCOPIC_MODE_T mmal_mode;
+} STR_REF_T;
 typedef struct xref_t
 {
-   char *mode;
-   int mmal_mode;
+   const char *mode;
+   MMAL_PARAM_EXPOSUREMODE_T mmal_mode;
 } XREF_T;
 
 

@@ -29,7 +29,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <memory.h>
 #include <ctype.h>
-
+extern "C" {
 #include "interface/vcos/vcos.h"
 
 #include "interface/vmcs_host/vc_vchi_gencmd.h"
@@ -38,9 +38,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/util/mmal_util.h"
 #include "interface/mmal/util/mmal_util_params.h"
 #include "interface/mmal/util/mmal_default_components.h"
+}
 #include "RaspiCamControl.h"
+extern "C" {
 #include "RaspiCLI.h"
-
+}
 /// Structure to cross reference exposure strings against the MMAL parameter equivalent
 static XREF_T  exposure_map[] =
 {
@@ -62,7 +64,7 @@ static XREF_T  exposure_map[] =
 static const int exposure_map_size = sizeof(exposure_map) / sizeof(exposure_map[0]);
 
 /// Structure to cross reference awb strings against the MMAL parameter equivalent
-static XREF_T awb_map[] =
+static AWB_REF_T awb_map[] =
 {
    {"off",           MMAL_PARAM_AWBMODE_OFF},
    {"auto",          MMAL_PARAM_AWBMODE_AUTO},
@@ -79,7 +81,7 @@ static XREF_T awb_map[] =
 static const int awb_map_size = sizeof(awb_map) / sizeof(awb_map[0]);
 
 /// Structure to cross reference image effect against the MMAL parameter equivalent
-static XREF_T imagefx_map[] =
+static IMGFX_REF_T imagefx_map[] =
 {
    {"none",          MMAL_PARAM_IMAGEFX_NONE},
    {"negative",      MMAL_PARAM_IMAGEFX_NEGATIVE},
@@ -105,7 +107,7 @@ static XREF_T imagefx_map[] =
 
 static const int imagefx_map_size = sizeof(imagefx_map) / sizeof(imagefx_map[0]);
 
-static XREF_T metering_mode_map[] =
+static XM_REF_T metering_mode_map[] =
 {
    {"average",       MMAL_PARAM_EXPOSUREMETERINGMODE_AVERAGE},
    {"spot",          MMAL_PARAM_EXPOSUREMETERINGMODE_SPOT},
@@ -115,7 +117,7 @@ static XREF_T metering_mode_map[] =
 
 static const int metering_mode_map_size = sizeof(metering_mode_map)/sizeof(metering_mode_map[0]);
 
-static XREF_T drc_mode_map[] =
+static DRC_REF_T drc_mode_map[] =
 {
    {"off",           MMAL_PARAMETER_DRC_STRENGTH_OFF},
    {"low",           MMAL_PARAMETER_DRC_STRENGTH_LOW},
@@ -125,7 +127,7 @@ static XREF_T drc_mode_map[] =
 
 static const int drc_mode_map_size = sizeof(drc_mode_map)/sizeof(drc_mode_map[0]);
 
-static XREF_T stereo_mode_map[] =
+static STR_REF_T stereo_mode_map[] =
 {
    {"off",           MMAL_STEREOSCOPIC_MODE_NONE},
    {"sbs",           MMAL_STEREOSCOPIC_MODE_SIDE_BY_SIDE},
@@ -193,6 +195,49 @@ static COMMAND_LIST  cmdline_commands[] =
 static int cmdline_commands_size = sizeof(cmdline_commands) / sizeof(cmdline_commands[0]);
 
 
+/**
+ * Function to take a string, a mapping, and return the int equivalent
+ * @param str Incoming string to match
+ * @param map Mapping data
+ * @param num_refs The number of items in the mapping data
+ * @return The integer match for the string, or -1 if no match
+ */
+template <class T>
+int raspicli_map_xref(const char *str, const T *map, int num_refs)
+{
+   int i;
+
+   for (i=0;i<num_refs;i++)
+   {
+      if (!strcasecmp(str, map[i].mode))
+      {
+         return map[i].mmal_mode;
+      }
+   }
+   return -1;
+}
+
+/**
+ * Function to take a mmal enum (as int) and return the string equivalent
+ * @param en Incoming int to match
+ * @param map Mapping data
+ * @param num_refs The number of items in the mapping data
+ * @return const pointer to string, or NULL if no match
+ */
+template <class T>
+const char *raspicli_unmap_xref(const int en, T *map, int num_refs)
+{
+   int i;
+
+   for (i=0;i<num_refs;i++)
+   {
+      if (en == map[i].mmal_mode)
+      {
+         return map[i].mode;
+      }
+   }
+   return NULL;
+}
 #define parameter_reset -99999
 
 /**

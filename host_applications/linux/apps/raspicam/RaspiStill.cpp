@@ -73,8 +73,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/mmal_parameters_camera.h"
 
 
-extern "C" {
 #include "RaspiCamControl.h"
+extern "C" {
 #include "RaspiPreview.h"
 #include "RaspiCLI.h"
 #include "RaspiTex.h"
@@ -109,7 +109,7 @@ extern "C" {
 #define FRAME_NEXT_IMMEDIATELY   6
 
 
-extern "C" int mmal_status_to_int(MMAL_STATUS_T status);
+int mmal_status_to_int(MMAL_STATUS_T status);
 static void signal_handler(int signal_number);
 
 
@@ -126,7 +126,6 @@ typedef struct
    char *filename;                     /// filename of output file
    char *linkname;                     /// filename of output file
    int frameStart;                     /// First number of frame output counter
-   MMAL_PARAM_THUMBNAIL_CONFIG_T thumbnailConfig;
    int verbose;                        /// !0 if want detailed run information
    int demoMode;                       /// Run app in demo mode
    int demoInterval;                   /// Interval between camera settings changes
@@ -136,7 +135,6 @@ typedef struct
    int enableExifTags;                 /// Enable/Disable EXIF tags in output
    int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
    int frameNextMethod;                /// Which method to use to advance to next frame
-   int glCapture;                      /// Save the GL frame-buffer instead of camera output
    int settings;                       /// Request settings from the camera
    int cameraNum;                      /// Camera number
    int burstCaptureMode;               /// Enable burst mode
@@ -180,7 +178,6 @@ static void store_exif_tag(RASPISTILL_STATE *state, const char *exif_tag);
 #define CommandOutput       5
 #define CommandVerbose      6
 #define CommandTimeout      7
-#define CommandThumbnail    8
 #define CommandDemoMode     9
 #define CommandEncoding     10
 #define CommandExifTag      11
@@ -188,8 +185,6 @@ static void store_exif_tag(RASPISTILL_STATE *state, const char *exif_tag);
 #define CommandLink         14
 #define CommandKeypress     15
 #define CommandSignal       16
-#define CommandGL           17
-#define CommandGLCapture    18
 #define CommandSettings     19
 #define CommandCamSelect    20
 #define CommandBurstMode    21
@@ -210,15 +205,12 @@ static COMMAND_LIST cmdline_commands[] =
    { CommandLink,    "-latest",     "l",  "Link latest complete image to filename <filename>", 1},
    { CommandVerbose, "-verbose",    "v",  "Output verbose information during run", 0 },
    { CommandTimeout, "-timeout",    "t",  "Time (in ms) before takes picture and shuts down (if not specified, set to 5s)", 1 },
-   { CommandThumbnail,"-thumb",     "th", "Set thumbnail parameters (x:y:quality) or none", 1},
    { CommandDemoMode,"-demo",       "d",  "Run a demo mode (cycle through range of camera options, no capture)", 0},
    { CommandEncoding,"-encoding",   "e",  "Encoding to use for output file (jpg, bmp, gif, png)", 1},
    { CommandExifTag, "-exif",       "x",  "EXIF tag to apply to captures (format as 'key=value') or none", 1},
    { CommandTimelapse,"-timelapse", "tl", "Timelapse mode. Takes a picture every <t>ms. %d == frame number (Try: -o img_%04d.jpg)", 1},
    { CommandKeypress,"-keypress",   "k",  "Wait between captures for a ENTER, X then ENTER to exit", 0},
    { CommandSignal,  "-signal",     "s",  "Wait between captures for a SIGUSR1 from another process", 0},
-   { CommandGL,      "-gl",         "g",  "Draw preview to texture instead of using video render component", 0},
-   { CommandGLCapture, "-glcapture","gc", "Capture the GL frame-buffer instead of the camera image", 0},
    { CommandSettings, "-settings",  "set","Retrieve camera settings and write to stdout", 0},
    { CommandCamSelect, "-camselect","cs", "Select camera <number>. Default 0", 1 },
    { CommandBurstMode, "-burst",    "bm", "Enable 'burst capture mode'", 0},
@@ -331,10 +323,6 @@ static void default_status(RASPISTILL_STATE *state)
    state->linkname = NULL;
    state->frameStart = 0;
    state->verbose = 0;
-   state->thumbnailConfig.enable = 1;
-   state->thumbnailConfig.width = 64;
-   state->thumbnailConfig.height = 48;
-   state->thumbnailConfig.quality = 35;
    state->demoMode = 0;
    state->demoInterval = 250; // ms
    state->camera_component = NULL;
@@ -347,7 +335,6 @@ static void default_status(RASPISTILL_STATE *state)
    state->enableExifTags = 1;
    state->timelapse = 0;
    state->frameNextMethod = FRAME_NEXT_SINGLE;
-   state->glCapture = 0;
    state->settings = 0;
    state->cameraNum = 0;
    state->burstCaptureMode=0;
@@ -387,9 +374,6 @@ static void dump_status(RASPISTILL_STATE *state)
          state->height, state->quality, state->filename);
    fprintf(stderr, "Time delay %d, Raw %s\n", state->timeout,
          state->wantRAW ? "yes" : "no");
-   fprintf(stderr, "Thumbnail enabled %s, width %d, height %d, quality %d\n",
-         state->thumbnailConfig.enable ? "Yes":"No", state->thumbnailConfig.width,
-         state->thumbnailConfig.height, state->thumbnailConfig.quality);
    fprintf(stderr, "Link to latest frame enabled ");
    if (state->linkname)
    {
@@ -426,7 +410,6 @@ static void dump_status(RASPISTILL_STATE *state)
    else
       fprintf(stderr, "EXIF tags disabled\n");
 
-   raspipreview_dump_parameters(&state->preview_parameters);
    raspicamcontrol_dump_parameters(&state->camera_parameters);
 }
 
@@ -596,20 +579,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
             valid = 0;
          break;
       }
-      case CommandThumbnail : // thumbnail parameters - needs string "x:y:quality"
-         if ( strcmp( argv[ i + 1 ], "none" ) == 0 )
-         {
-            state->thumbnailConfig.enable = 0;
-         }
-         else
-         {
-            sscanf(argv[i + 1], "%d:%d:%d",
-                   &state->thumbnailConfig.width,
-                   &state->thumbnailConfig.height,
-                   &state->thumbnailConfig.quality);
-         }
-         i++;
-         break;
 
       case CommandDemoMode: // Run in demo mode - no capture
       {
@@ -694,9 +663,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          break;
 
 
-      case CommandGLCapture:
-         state->glCapture = 1;
-         break;
 
       case CommandSettings:
          state->settings = 1;
@@ -748,9 +714,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          const char *second_arg = (i + 1 < argc) ? argv[i + 1] : NULL;
          int parms_used = raspicamcontrol_parse_cmdline(&state->camera_parameters, &argv[i][1], second_arg);
 
-         // Still unused, try preview options
-         if (!parms_used)
-            parms_used = raspipreview_parse_cmdline(&state->preview_parameters, &argv[i][1], second_arg);
 
 
          // If no parms were used, this must be a bad parameters
@@ -787,9 +750,6 @@ static void display_valid_parameters(const char *app_name)
    fprintf(stdout, "Image parameter commands\n\n");
 
    raspicli_display_help(cmdline_commands, cmdline_commands_size);
-
-   // Help for preview options
-   raspipreview_display_help();
 
    // Now display any help information from the camcontrol code
    raspicamcontrol_display_help();
@@ -995,8 +955,8 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    //  set up the camera configuration
    {
-      unsigned int h = state->preview_parameters.previewWindow.height;
-      unsigned int w = state->preview_parameters.previewWindow.width;
+      unsigned int h = 480;
+      unsigned int w = 640;
       MMAL_PARAMETER_CAMERA_CONFIG_T cam_config =
       {
          { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },
@@ -1035,17 +995,6 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
         MMAL_PARAMETER_FPS_RANGE_T fps_range = {{MMAL_PARAMETER_FPS_RANGE, sizeof(fps_range)},
                                                      { 166, 1000 }, {999, 1000}};
         mmal_port_parameter_set(preview_port, &fps_range.hdr);
-   }
-   {
-      // Use a full FOV 4:3 mode
-      format->es->video.width = VCOS_ALIGN_UP(state->preview_parameters.previewWindow.width, 32);
-      format->es->video.height = VCOS_ALIGN_UP(state->preview_parameters.previewWindow.height, 16);
-      format->es->video.crop.x = 0;
-      format->es->video.crop.y = 0;
-      format->es->video.crop.width = state->preview_parameters.previewWindow.width;
-      format->es->video.crop.height = state->preview_parameters.previewWindow.height;
-      format->es->video.frame_rate.num = PREVIEW_FRAME_RATE_NUM;
-      format->es->video.frame_rate.den = PREVIEW_FRAME_RATE_DEN;
    }
 
    status = mmal_port_format_commit(preview_port);
@@ -1226,15 +1175,6 @@ static MMAL_STATUS_T create_encoder_component(RASPISTILL_STATE *state)
    {
       MMAL_PARAMETER_THUMBNAIL_CONFIG_T param_thumb = {{MMAL_PARAMETER_THUMBNAIL_CONFIGURATION, sizeof(MMAL_PARAMETER_THUMBNAIL_CONFIG_T)}, 0, 0, 0, 0};
 
-      if ( state->thumbnailConfig.enable &&
-           state->thumbnailConfig.width > 0 && state->thumbnailConfig.height > 0 )
-      {
-         // Have a valid thumbnail defined
-         param_thumb.enable = 1;
-         param_thumb.width = state->thumbnailConfig.width;
-         param_thumb.height = state->thumbnailConfig.height;
-         param_thumb.quality = state->thumbnailConfig.quality;
-      }
       status = mmal_port_parameter_set(encoder->control, &param_thumb.hdr);
    }
 
